@@ -40,33 +40,16 @@ typedef void (*_SPI_ptr)();
 #define SLAVE_PINS_ADDR volatile uint32_t *spiAddr = &(*(volatile uint32_t*)(0x401F84EC + (_portnum * 0x10)))
 
 // Interrupts:
-// TDF: Data can be written to transmit FIFO
-#define SR_TDF (1 << 0)
-#define IRQ_TDIE (1 << 0)
-// RDF: Data can be read from receive FIFO
-#define SR_RDF (1 << 1)
-#define IRQ_RDIE (1 << 1)
-// WCF: Word complete: When enough bytes have been transferred to fill a word
-#define SR_WCF (1 << 8)
-#define IRQ_WCIE (1 << 8)
-// FCF: Frame complete - When PCS goes high.
-#define SR_FCF (1 << 9)
-#define IRQ_FCIE (1 << 9)
-// TCF: Transfer Complete - Used for send. When all data in transmit/command FIFO is empty.
-#define SR_TCF (1 << 10)
-#define IRQ_TCIE (1 << 10)
-// TEF: Transmit/command FIFO underrun
-#define SR_TEF (1 << 11)
-#define IRQ_TEIE (1 << 11)
-// REF: Receive FIFO overflow
-#define SR_REF (1 << 12)
-#define IRQ_REIE (1 << 12)
-// DMF: Data has matched configured data match value
-#define SR_DMF (1 << 13)
-#define IRQ_DMIE (1 << 13)
+// TDF/TDIE: Data can be written to transmit FIFO
+// RDF/RDIE: Data can be read from receive FIFO
+// WCF/WCIE: Word complete: When enough bytes have been transferred to fill a word
+// FCF/FCIE: Frame complete - When PCS goes high.
+// TCF/TCIE: Transfer Complete - Used for send. When all data in transmit/command FIFO is empty.
+// TEF/TEIE: Transmit/command FIFO underrun
+// REF/REIE: Receive FIFO overflow
+// DMF/DMIE: Data has matched configured data match value
 
-// Not an interrupt: Module busy status flag
-#define SR_MBF (1 << 24)
+// MBF: Not an interrupt: Module busy status flag
 
 extern SPIClass SPI;
 
@@ -136,15 +119,15 @@ SPISlave_T4_FUNC SPISlave_T4_OPT::SPISlave_T4() {
 
 SPISlave_T4_FUNC void SPISlave_T4_OPT::srStatus() {
   SLAVE_PORT_ADDR;
-  if(SLAVE_SR & SR_MBF) Serial.print("Module busy, "); // Not an interrupt
-  if(SLAVE_SR & SR_DMF) Serial.print("Data matched, ");
-  if(SLAVE_SR & SR_REF) Serial.print("RX FIFO overflow, ");
-  if(SLAVE_SR & SR_TEF) Serial.print("TX FIFO underrun, ");
-  if(SLAVE_SR & SR_TCF) Serial.print("All TX completed, ");
-  if(SLAVE_SR & SR_FCF) Serial.print("Frame completed, ");
-  if(SLAVE_SR & SR_WCF) Serial.print("Word completed, ");
-  if(SLAVE_SR & SR_RDF) Serial.print("RX data ready, ");
-  if(SLAVE_SR & SR_TDF) Serial.print("TX data ready, ");
+  if(SLAVE_SR & LPSPI_SR_MBF) Serial.print("Module busy, "); // Not an interrupt
+  if(SLAVE_SR & LPSPI_SR_DMF) Serial.print("Data matched, ");
+  if(SLAVE_SR & LPSPI_SR_REF) Serial.print("RX FIFO overflow, ");
+  if(SLAVE_SR & LPSPI_SR_TEF) Serial.print("TX FIFO underrun, ");
+  if(SLAVE_SR & LPSPI_SR_TCF) Serial.print("All TX completed, ");
+  if(SLAVE_SR & LPSPI_SR_FCF) Serial.print("Frame completed, ");
+  if(SLAVE_SR & LPSPI_SR_WCF) Serial.print("Word completed, ");
+  if(SLAVE_SR & LPSPI_SR_RDF) Serial.print("RX data ready, ");
+  if(SLAVE_SR & LPSPI_SR_TDF) Serial.print("TX data ready, ");
   
   Serial.print("TXFIFO: ");
   Serial.print(SLAVE_FSR & 0xFF);
@@ -197,7 +180,7 @@ SPISlave_T4_FUNC void SPISlave_T4_OPT::begin() {
   SLAVE_FCR = 0;
 
   // Enabled interrupts
-  SLAVE_IER = IRQ_FCIE; // Frame complete
+  SLAVE_IER = LPSPI_IER_FCIE; // Frame complete
   
   // 9: RDMO: Received data is stored in receive FIFO as i normal operations
   // 8: CIRCFIFO: Circular FIFO is disabled
