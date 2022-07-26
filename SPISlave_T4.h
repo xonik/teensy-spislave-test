@@ -26,8 +26,7 @@ typedef void (*_SPI_ptr)();
 #define SLAVE_CFGR0 spiAddr[8] // 32 = 0x20, Configuration 0
 #define SLAVE_CFGR1 spiAddr[9] // 36 = 0x24, Configuration 1
 #define SLAVE_TCR spiAddr[24] // 96 = 0x60 
-//#define SLAVE_TDR spiAddr[25] // 100 = 0x64, Transmit Data
-#define SLAVE_TDR(x) spiAddr[25] = (x)
+#define SLAVE_TDR(x) spiAddr[25] = (x) // 100 = 0x64, Transmit Data
 #define SLAVE_RDR spiAddr[29] // 116 = 0x74, Receive Data
 #define SLAVE_SR spiAddr[5] // 20 = 0x14, Status (SR) 
 #define SLAVE_FSR spiAddr[23] // 92 = 0x5C, FIFO Status
@@ -54,29 +53,13 @@ class SPISlave_T4_Base {
     virtual void SLAVE_ISR();
 };
 
-int32_t received[256];
-int32_t receivedSR[256];
-int32_t receivedMillis[256];
-uint8_t receivedTxfifo[256];
-uint8_t receivedRxfifo[256];
-uint8_t recindex = 0;
-boolean dataready = false;
-uint8_t receives = 0;
-uint8_t lastPrint = 0;
-uint8_t outs = 0;
-uint8_t in = 0;
-
 static SPISlave_T4_Base* _LPSPI4 = nullptr;
 
 SPISlave_T4_CLASS class SPISlave_T4 : public SPISlave_T4_Base {
   public:
     SPISlave_T4();
     void begin();
-    uint32_t transmitErrors();
-    void printSr();
     void srStatus(uint32_t sr);
-    void printReceived();
-    void fillTx();
 
   private:
     volatile uint32_t *spiAddr;
@@ -130,11 +113,6 @@ SPISlave_T4_FUNC SPISlave_T4_OPT::SPISlave_T4() {
 //        1 word, in which case frame is split into multiple words.
 //        As long as PCS is asserted (low). Divisible by 2
 
-
-SPISlave_T4_FUNC void SPISlave_T4_OPT::printSr() {
-  Serial.print("Last: ");Serial.print(lastPrint);Serial.print(", receives ");Serial.println(receives);
-  srStatus(SLAVE_SR);
-}
 SPISlave_T4_FUNC void SPISlave_T4_OPT::srStatus(uint32_t sr) {
   if(sr & LPSPI_SR_MBF) Serial.print("Module busy, "); // Not an interrupt
   if(sr & LPSPI_SR_DMF) Serial.print("Data matched, ");
@@ -147,57 +125,19 @@ SPISlave_T4_FUNC void SPISlave_T4_OPT::srStatus(uint32_t sr) {
   if(sr & LPSPI_SR_TDF) Serial.print("TX data ready, ");
 }
 
-uint32_t repeat = 0;
-
-SPISlave_T4_FUNC void SPISlave_T4_OPT::printReceived() {
-  if(lastPrint != receives) {
-    for(uint8_t i = lastPrint; i<receives; i++) {
-      //Serial.print("\nSR ");Serial.print(i);Serial.print(" ");Serial.println(receivedSR[i]);
-      Serial.print("\ni ");Serial.print(i);Serial.print(", Last ");Serial.print(lastPrint);Serial.print(", receives ");Serial.println(receives);
-      Serial.print(receivedMillis[i]);
-      Serial.print(": ");
-      srStatus(receivedSR[i]);
-      //Serial.print("\nTXFIFO: ");Serial.print(receivedTxfifo[i]);Serial.print(", RXFIFO: ");Serial.print(receivedRxfifo[i]);
-     // Serial.print(" Received: ");Serial.println(received[i]);
-    }
-    
-    lastPrint = receives;  
-  }
-}
-
-SPISlave_T4_FUNC void SPISlave_T4_OPT::fillTx() {
-  Serial.print("Fill, ");Serial.print("Len ");Serial.println(SLAVE_FSR & 0xFF);
-  if((SLAVE_FSR & 0xFF) < 4) {
-    SLAVE_TDR(1);
-    SLAVE_TDR(2);
-    SLAVE_TDR(3);
-    SLAVE_TDR(4);
-    SLAVE_TDR(5);
-    SLAVE_TDR(6);
-    SLAVE_TDR(7);
-    SLAVE_TDR(8);
-  }
-}
-
 uint32_t prev = 0;
-
+uint8_t in = 0;
 SPISlave_T4_FUNC void SPISlave_T4_OPT::SLAVE_ISR() {
 
-  uint32_t data = 0;
-  // If data received
-  if(SLAVE_SR & 0x2) {
-    data = SLAVE_RDR;
+  // NB: Writing TDR here may lock things up if something fails during transfer.
+  // It is done for this example only.
+  if(SLAVE_SR & LPSPI_SR_FCF && (SLAVE_FSR & 0xFF0000)) { // frame complete and data in RXFIFO
     uint32_t next = millis();
-    Serial.print(in++);Serial.print(" ");Serial.print(next-prev);Serial.print(" ");Serial.println(data);
+    Serial.print(in++);Serial.print(" ");Serial.print(next-prev);Serial.print(" ");Serial.println(SLAVE_RDR);
     prev = next;
+    SLAVE_TDR(1);
   }
-  SLAVE_SR = 0x3F00;
-  
-  
-  if(data){
-    data = 0;
-  }
-  
+  SLAVE_SR = 0x3F00;  
   asm volatile ("dsb");
 }
 
@@ -213,8 +153,8 @@ SPISlave_T4_FUNC void SPISlave_T4_OPT::begin() {
   SLAVE_FCR = 0;
   
   // Enabled interrupts
-  SLAVE_IER = 0x3F00;
-  //SLAVE_IER = LPSPI_IER_FCIE; // Frame complete
+  //SLAVE_IER = 0x3F00; // All interrupts except TD and RD
+  SLAVE_IER = LPSPI_IER_FCIE; // Frame complete
   //SLAVE_IER = LPSPI_IER_WCIE; // Word complete
 
   // 9: RDMO: Received data is stored in receive FIFO as i normal operations
@@ -235,8 +175,6 @@ SPISlave_T4_FUNC void SPISlave_T4_OPT::begin() {
   // 0: MASTER: Slave mode
   //SLAVE_CFGR1 = 0; // cables are crossed.
   SLAVE_CFGR1 = 3 << 24; // cables are MOSI-MOSI & MISO - MISO
-  Serial.print("CFG1");Serial.println(SLAVE_CFGR1, HEX);
-  //SLAVE_CFGR1 = LPSPI_CFGR1_OUTCFG;
 
   // Clear status register
   // (=all interrupt flags except receive data flag and transmit data flag) 
@@ -254,7 +192,6 @@ SPISlave_T4_FUNC void SPISlave_T4_OPT::begin() {
   SLAVE_TDR(6);
   SLAVE_TDR(7);
   SLAVE_TDR(8);
-
   
   // Enable Module, Debug Mode (LPSPI_CR_MEN = 1, LPSPI_CR_DBGEN = 1 << 3)
   // TODO:
