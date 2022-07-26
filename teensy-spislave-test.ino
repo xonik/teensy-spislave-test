@@ -10,5 +10,8 @@ void setup() {
 }
 
 void loop() {
-  delay(1000);
+  //mySPI.printSr();  
+  delay(300);
+  //mySPI.printReceived();
+  mySPI.fillTx();
 }
